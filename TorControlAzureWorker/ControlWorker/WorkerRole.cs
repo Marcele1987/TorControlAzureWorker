@@ -1,25 +1,29 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.WindowsAzure;
-using Microsoft.WindowsAzure.Diagnostics;
 using Microsoft.WindowsAzure.ServiceRuntime;
-using Microsoft.WindowsAzure.Storage;
 using Nest;
 using TorControlClientNet;
+using TorControlClientNet.Constants;
+using TorControlClientNet.Entities;
+using TorControlClientNet.Helper;
 
 namespace ControlWorker
 {
     public class WorkerRole : RoleEntryPoint
     {
+        #region Fields
+
         private readonly CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
         private readonly ManualResetEvent runCompleteEvent = new ManualResetEvent(false);
-        private TorControlClient _torClient;
         private ElasticClient _elasticClient;
+        private TorControlClient _torClient;
+
+        #endregion
+
+        #region Members
 
         public override void Run()
         {
@@ -27,11 +31,11 @@ namespace ControlWorker
 
             try
             {
-                this.RunAsync(this.cancellationTokenSource.Token).Wait();
+                RunAsync(cancellationTokenSource.Token).Wait();
             }
             finally
             {
-                this.runCompleteEvent.Set();
+                runCompleteEvent.Set();
             }
         }
 
@@ -40,7 +44,7 @@ namespace ControlWorker
             // Set the maximum number of concurrent connections
             ServicePointManager.DefaultConnectionLimit = 12;
 
-            bool result = base.OnStart();
+            var result = base.OnStart();
 
             var settings = new ConnectionSettings(new Uri("http://localhost:9200")).DefaultIndex("tor");
 
@@ -76,8 +80,8 @@ namespace ControlWorker
                 var torControlLog = new TorControlLog();
                 torControlLog.EventName = args.EventName;
                 torControlLog.Value = value;
-                if (Double.TryParse(value, out double result))
-                    torControlLog.ValueNum = result/1000000;
+                if (double.TryParse(value, out var result))
+                    torControlLog.ValueNum = result / 1000000;
 
                 _elasticClient.Index(torControlLog);
             }
@@ -87,12 +91,12 @@ namespace ControlWorker
         {
             var args = e as TorEventArgs;
             var values = args.EventName.Split(' ');
-            if(values[1] == "BW")
+            if (values[1] == "BW")
             {
                 var torControlLog = new TorControlLog();
                 torControlLog.EventName = "BytesRead";
                 torControlLog.Value = values[2];
-                if (Double.TryParse(values[2], out double result))
+                if (double.TryParse(values[2], out var result))
                     torControlLog.ValueNum = result / 1000000;
 
                 _elasticClient.Index(torControlLog);
@@ -100,7 +104,7 @@ namespace ControlWorker
                 torControlLog = new TorControlLog();
                 torControlLog.EventName = "BytesWritten";
                 torControlLog.Value = values[2];
-                if (Double.TryParse(values[2], out double result2))
+                if (double.TryParse(values[2], out var result2))
                     torControlLog.ValueNum = result2 / 1000000;
 
                 _elasticClient.Index(torControlLog);
@@ -120,8 +124,8 @@ namespace ControlWorker
         {
             Trace.TraceInformation("ControlWorker is stopping");
 
-            this.cancellationTokenSource.Cancel();
-            this.runCompleteEvent.WaitOne();
+            cancellationTokenSource.Cancel();
+            runCompleteEvent.WaitOne();
 
             base.OnStop();
 
@@ -141,8 +145,11 @@ namespace ControlWorker
                     _torClient.SendCommand(TorCommands.GETINFO, TorGetInfoKeywords.trafficread.GetStringValue());
                     _torClient.SendCommand(TorCommands.GETINFO, TorGetInfoKeywords.trafficwritten.GetStringValue());
                 }
+
                 await Task.Delay(10000);
             }
         }
+
+        #endregion
     }
 }
